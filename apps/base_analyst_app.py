@@ -61,14 +61,14 @@ class BaseAnalystApp:
             elapsed_time
         )).collect()
 
-    @st.cache_data(ttl=3600)
-    def fetch_key_questions():  # Ajoutez un underscore devant 'self'
+    # @st.cache_data(ttl=3600)
+    def fetch_key_questions(self):  # Ajoutez un underscore devant 'self'
         logging.info(f"fetch_key_questions called in {__class__.__name__}")
         session = get_active_session()
         user_bookmarks_query = f"""
         SELECT bk_question 
         FROM CORTEX_DB.PUBLIC.CORTEX_BOOKMARKS
-        WHERE APP_ID = {_self.APP_ID}
+        WHERE APP_ID = {self.APP_ID}
         AND BK_USERNAME = 'ALL'
         ORDER BY BK_UPDATED_AT DESC
         LIMIT 6
@@ -79,7 +79,7 @@ class BaseAnalystApp:
     def display_key_questions(self):
         logging.info(f"display_key_questions called in {self.__class__.__name__}")
         st.markdown("<h2 style='text-align: center;'>Comment puis-je vous aider aujourd'hui ?</h2>", unsafe_allow_html=True)
-        key_questions = self.fetch_key_questions(_self=self)
+        key_questions = self.fetch_key_questions()
         with st.container(border=True):
             col1, col2 = st.columns(2)
             for i, question in enumerate(key_questions):

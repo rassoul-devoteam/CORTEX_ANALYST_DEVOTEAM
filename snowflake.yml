@@ -1,6 +1,6 @@
 definition_version: "1.1"
 streamlit:
-  name: CORTEX_SAINT_GOBAIN_DEV
+  name: CORTEX_SAINT_GOBAIN_V1
   stage: RAW_DATA
   query_warehouse: cortex_analyst_wh
   main_file: Home.py
