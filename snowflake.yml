@@ -1,0 +1,15 @@
+definition_version: "1.1"
+streamlit:
+  name: CORTEX_SAINT_GOBAIN_DEV
+  stage: RAW_DATA
+  query_warehouse: cortex_analyst_wh
+  main_file: Home.py
+  env_file: environment.yml
+  pages_dir: pages/
+  additional_source_files:
+    - apps/base_analyst_app.py
+    - apps/analyst_winter_games.py
+    - apps/analyst_st_gobain.py
+    - apps/analyst_jeux_olympiques.py
+    - pages/monitoring.py
+    - pages/admin.py
