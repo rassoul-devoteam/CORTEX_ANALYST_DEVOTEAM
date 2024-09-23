@@ -4,7 +4,7 @@ class AnalystJeuxOlympiques(BaseAnalystApp):
         super().__init__(app_id=1)
 
 def main():
-    app = AnalystJeuxOlympiques()
+    app = BaseAnalystApp(1)
     app.run()
 
 if __name__ == "__main__":

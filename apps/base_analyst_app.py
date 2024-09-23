@@ -27,39 +27,32 @@ class BaseAnalystApp:
         """
         results = session.sql(query).collect()
         row = results[0]
-        self.APP_TITLE = row['APP_NAME']
+        self.APP_NAME = row['APP_NAME']  # Store the APP_NAME
+        self.APP_TITLE = row['APP_NAME']  # Keep APP_TITLE for backwards compatibility
         self.DATABASE = row['APP_DATABASE']
         self.SCHEMA = row['APP_SCHEMA']
         self.STAGE = row['APP_STAGE']
         self.APP_LOGO_URL = row['APP_LOGO_URL']
 
-    def fetch_yamls(self):
-        session = get_active_session()
-        query = f"""
-        SELECT *
-        FROM CORTEX_DB.PUBLIC.CORTEX_MODELS
-        WHERE APP_ID = {self.APP_ID}
-        AND CORTEX_YAML_ACTIVE = 1
-        """
-        results = session.sql(query).collect()
-        files = {}
-        for row in results:
-            files[row['CORTEX_YAML_NAME']] = row['CORTEX_YAML_FILE']
-        return files
-
-    def log_to_snowflake(self, username, app_name, yaml_file, input_text, output_json, elapsed_time):
+    def log_to_snowflake(self, username, input_text, output_json, elapsed_time, resolution_time, yaml_file):
         session = get_active_session()
         session.sql("""
-            INSERT INTO CORTEX_DB.PUBLIC.CORTEX_LOGS (DateTime, Username, App_Name, Yaml_File, input_text, output_json, elapsed_time)
-            VALUES (?, CURRENT_USER(), ?, ?, ?, ?, ?)
+            INSERT INTO CORTEX_DB.PUBLIC.CORTEX_LOGS 
+            (DateTime, Username, App_Name, App_ID, Yaml_File, input_text, output_json, elapsed_time, resolution_time)
+            VALUES (?, CURRENT_USER(), ?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now(), 
-            app_name, 
-            yaml_file, 
+            self.APP_NAME,  # Use APP_NAME instead of APP_TITLE
+            self.APP_ID,
+            yaml_file,
             input_text, 
             json.dumps(output_json),
-            elapsed_time
+            elapsed_time,
+            resolution_time
         )).collect()
+
+    def calculate_resolution_time(self, elapsed_time):
+        return elapsed_time * 0.7
 
     # @st.cache_data(ttl=3600)
     def fetch_key_questions(self):  # Ajoutez un underscore devant 'self'
@@ -75,6 +68,20 @@ class BaseAnalystApp:
         """
         user_bookmarks = session.sql(user_bookmarks_query).collect()
         return [row['BK_QUESTION'] for row in user_bookmarks]
+    
+    def fetch_yamls(self):
+        session = get_active_session()
+        query = f"""
+        SELECT *
+        FROM CORTEX_DB.PUBLIC.CORTEX_MODELS
+        WHERE APP_ID = {self.APP_ID}
+        AND CORTEX_YAML_ACTIVE = 1
+        """
+        results = session.sql(query).collect()
+        files = {}
+        for row in results:
+            files[row['CORTEX_YAML_NAME']] = row['CORTEX_YAML_FILE']
+        return files
     
     def display_key_questions(self):
         logging.info(f"display_key_questions called in {self.__class__.__name__}")
@@ -275,13 +282,14 @@ class BaseAnalystApp:
             elapsed_time = int((time.time() - start_time) * 1000)
             if resp["status"] < 400:
                 output_json = json.loads(resp["content"])
+                resolution_time = self.calculate_resolution_time(elapsed_time)
                 self.log_to_snowflake(
                     username="",
-                    app_name="Cortex Analyst",
-                    yaml_file=yaml_file,
                     input_text=prompt,
                     output_json=output_json,
-                    elapsed_time=elapsed_time
+                    elapsed_time=elapsed_time,
+                    resolution_time=resolution_time, 
+                    yaml_file=yaml_file
                 )
                 return output_json
             else:
@@ -289,15 +297,15 @@ class BaseAnalystApp:
                 return None
         except Exception as e:
             st.error(f"Une erreur est survenue : {str(e)}")
-            return None
+            return None 
 
     def clear_chat_history(self):
         st.session_state.messages = []
 
-    def run(self):       
-        if 'selected_model' not in st.session_state or st.session_state.selected_model not in self.FILES:
+    def run(self):
+        if 'selected_model' not in st.session_state:
             st.session_state.selected_model = list(self.FILES.keys())[0] if self.FILES else None
-        
+
         if 'messages' not in st.session_state:
             st.session_state.messages = []
         if 'suggestions' not in st.session_state:
@@ -305,6 +313,7 @@ class BaseAnalystApp:
         if 'active_suggestion' not in st.session_state:
             st.session_state.active_suggestion = None
 
+        # Affichage des messages existants
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 if message["role"] == "user":
@@ -327,12 +336,13 @@ class BaseAnalystApp:
         st.sidebar.button("Effacer l'historique du chat", on_click=self.clear_chat_history)
 
         if self.FILES:
+            # Sélection du modèle
             previous_model = st.session_state.selected_model
             st.session_state.selected_model = st.selectbox(
                 "Choisissez un modèle sémantique",
                 options=list(self.FILES.keys()),
                 key="model_selector",
-                index=list(self.FILES.keys()).index(st.session_state.selected_model)
+                index=list(self.FILES.keys()).index(st.session_state.selected_model) if st.session_state.selected_model in self.FILES else 0
             )
 
             if previous_model != st.session_state.selected_model:
