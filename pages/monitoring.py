@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from snowflake.snowpark.context import get_active_session
 
 def main():
+
         # CSS personnalisé pour les ombres et autres styles
     st.markdown("""
     <style>
@@ -107,8 +108,8 @@ def main():
                 filtered_df = filtered_df[filtered_df['USERNAME'] == selected_user]
             if keyword:
                 columns_to_search = ['INPUT_TEXT', 'OUTPUT_JSON'] + [col for col in filtered_df.columns if col.startswith('output_')]
-                filtered_df = filtered_df[columns_to_search].astype(str).apply(lambda x: x.str.contains(keyword, case=False)).any(axis=1)
-
+                mask = filtered_df[columns_to_search].astype(str).apply(lambda x: x.str.contains(keyword, case=False)).any(axis=1)
+                filtered_df = filtered_df[mask]
             # Afficher les logs filtrés
             all_columns = filtered_df.columns.tolist()
             default_columns = ['DATETIME', 'USERNAME', 'APP_NAME', 'INPUT_TEXT', 'ELAPSED_TIME']
@@ -263,5 +264,6 @@ def main():
                 app_id = 1  # You can adjust this to pull from a variable or external data source
                 add_bookmark(app_id, question)
                 st.success(f"Bookmark ajouté pour {app} avec la question : {question}")
+
 if __name__ == "__main__":
     main()
