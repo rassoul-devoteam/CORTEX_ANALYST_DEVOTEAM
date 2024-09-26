@@ -294,9 +294,10 @@ class BaseAnalystApp:
             elif item["type"] == "suggestions":
                 with st.expander("Suggestions", expanded=True):
                     for suggestion_index, suggestion in enumerate(item["suggestions"]):
-                        unique_key = f"{message_index}_{suggestion_index}_{hash(suggestion)}_{time.time()}"
-                        if st.button(suggestion, key=f"suggestion_{unique_key}"):
+                        unique_key = f"suggestion_{message_index}_{suggestion_index}_{hash(suggestion)}"
+                        if st.button(suggestion, key=unique_key):
                             st.session_state.active_suggestion = suggestion
+                            st.experimental_rerun()
             elif item["type"] == "sql":
                 with st.expander("Requête SQL", expanded=False):
                     st.code(item["statement"], language="sql")
@@ -474,6 +475,7 @@ class BaseAnalystApp:
             if st.session_state.active_suggestion:
                 self.process_message(prompt=st.session_state.active_suggestion)
                 st.session_state.active_suggestion = None
+                st.experimental_rerun()
         else:
             st.error("Aucun modèle sémantique disponible pour cette application.")
 
