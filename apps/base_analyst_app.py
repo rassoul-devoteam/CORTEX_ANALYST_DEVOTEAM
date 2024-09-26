@@ -54,6 +54,20 @@ class BaseAnalystApp:
     def calculate_resolution_time(self, elapsed_time):
         return elapsed_time * 0.7
 
+    def fetch_popular_questions(self):
+        logging.info(f"fetch_popular_questions called in {__class__.__name__}")
+        session = get_active_session()
+        popular_questions_query = f"""
+        SELECT input_text, COUNT(*) as question_count
+        FROM CORTEX_DB.PUBLIC.CORTEX_LOGS
+        WHERE App_ID = {self.APP_ID}
+        GROUP BY input_text
+        ORDER BY question_count DESC
+        LIMIT 4
+        """
+        popular_questions = session.sql(popular_questions_query).collect()
+        return [row['INPUT_TEXT'] for row in popular_questions]
+    
     # @st.cache_data(ttl=3600)
     def fetch_key_questions(self):  # Ajoutez un underscore devant 'self'
         logging.info(f"fetch_key_questions called in {__class__.__name__}")
@@ -131,7 +145,7 @@ class BaseAnalystApp:
     def add_bookmark_button(self, question, lang, message_index):
         logging.info(f"add_bookmark_button")
         question_hash = hashlib.md5(question.encode()).hexdigest()
-        bookmark_button_key = f"bookmark_{message_index}_{question_hash}"
+        bookmark_button_key = f"add_bookmark_{message_index}_{question_hash}"
         
         bookmark_clicked = st.button("🔖", key=bookmark_button_key)
         
@@ -140,8 +154,89 @@ class BaseAnalystApp:
             success = self.insert_bookmark_data(question, lang)
             if success:
                 st.success("Question enregistrée dans vos favoris !")
+                st.rerun() 
             else:
                 st.error("Erreur lors de l'enregistrement du favori.")
+
+    def display_user_bookmarks_and_popular_questions(self):
+        st.sidebar.markdown("## Mes favoris ❤️")
+        bookmarks = self.fetch_user_bookmarks()
+        if not bookmarks:
+            st.sidebar.info("Vous n'avez pas encore de favoris.")
+        else:
+            for index, bookmark in enumerate(bookmarks):
+                col1, col2, col3 = st.sidebar.columns([3, 1, 1])
+                with col1:
+                    if st.button(bookmark, key=f"bookmark_button_{index}_{hash(bookmark)}"):
+                        st.session_state.active_suggestion = bookmark
+                with col2:
+                    if st.button("✏️", key=f"edit_bookmark_{index}_{hash(bookmark)}"):
+                        st.session_state.editing_bookmark = bookmark
+                        st.session_state.editing_bookmark_index = index
+                with col3:
+                    if st.button("🗑️", key=f"delete_bookmark_{index}_{hash(bookmark)}"):
+                        self.delete_bookmark(bookmark)
+                        st.rerun()
+
+        if 'editing_bookmark' in st.session_state:
+            self.edit_bookmark_ui()
+
+        st.sidebar.markdown("## Questions populaires ✨")
+        popular_questions = self.fetch_popular_questions()
+        for index, question in enumerate(popular_questions):
+            if st.sidebar.button(question, key=f"popular_question_{index}_{hash(question)}"):
+                st.session_state.active_suggestion = question
+
+    def edit_bookmark_ui(self):
+        st.sidebar.markdown("### Modifier le favori")
+        new_bookmark = st.sidebar.text_input("Nouveau texte", value=st.session_state.editing_bookmark)
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.button("Enregistrer", key="save_edit_bookmark"):
+                self.update_bookmark(st.session_state.editing_bookmark, new_bookmark)
+                del st.session_state.editing_bookmark
+                del st.session_state.editing_bookmark_index
+                st.rerun()
+        with col2:
+            if st.button("Annuler", key="cancel_edit_bookmark"):
+                del st.session_state.editing_bookmark
+                del st.session_state.editing_bookmark_index
+                st.rerun()
+
+    def update_bookmark(self, old_bookmark, new_bookmark):
+        session = get_active_session()
+        update_query = f"""
+        UPDATE CORTEX_DB.PUBLIC.CORTEX_BOOKMARKS
+        SET BK_QUESTION = ?, BK_UPDATED_AT = CURRENT_TIMESTAMP()
+        WHERE APP_ID = {self.APP_ID}
+        AND BK_USERNAME = CURRENT_USER()
+        AND BK_QUESTION = ?
+        """
+        session.sql(update_query, (new_bookmark, old_bookmark)).collect()
+        logging.info(f"Favori mis à jour : '{old_bookmark}' -> '{new_bookmark}'")
+
+    def delete_bookmark(self, question):
+        session = get_active_session()
+        delete_query = f"""
+        DELETE FROM CORTEX_DB.PUBLIC.CORTEX_BOOKMARKS
+        WHERE APP_ID = {self.APP_ID}
+        AND BK_USERNAME = CURRENT_USER()
+        AND BK_QUESTION = ?
+        """
+        session.sql(delete_query, (question,)).collect()
+
+    def fetch_user_bookmarks(self):
+        logging.info(f"fetch_user_bookmarks called in {__class__.__name__}")
+        session = get_active_session()
+        user_bookmarks_query = f"""
+        SELECT BK_QUESTION 
+        FROM CORTEX_DB.PUBLIC.CORTEX_BOOKMARKS
+        WHERE APP_ID = {self.APP_ID}
+        AND BK_USERNAME = CURRENT_USER()
+        ORDER BY BK_UPDATED_AT DESC
+        """
+        user_bookmarks = session.sql(user_bookmarks_query).collect()
+        return [row['BK_QUESTION'] for row in user_bookmarks]
 
     def insert_vote_data(self, question, yaml_file, vote_value):
         logging.info(f"Tentative d'ajout d'un vote : app_id={self.APP_ID}, question={question}, vote_value={vote_value}")
@@ -333,7 +428,13 @@ class BaseAnalystApp:
                         else:
                             st.markdown(str(item))
 
-        st.sidebar.button("Effacer l'historique du chat", on_click=self.clear_chat_history)
+        if 'editing_bookmark' not in st.session_state:
+            st.session_state.editing_bookmark = None
+        if 'editing_bookmark_index' not in st.session_state:
+            st.session_state.editing_bookmark_index = None                    
+
+        st.sidebar.button("Effacer l'historique du chat", on_click=self.clear_chat_history, key="clear_history_button")
+        self.display_user_bookmarks_and_popular_questions()
 
         if self.FILES:
             # Sélection du modèle
