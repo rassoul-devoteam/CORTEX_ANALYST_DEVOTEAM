@@ -335,9 +335,7 @@ class BaseAnalystApp:
 
     def process_message(self, prompt: str):
         yaml_file = self.FILES[st.session_state.selected_model]
-        st.session_state.messages.append(
-            {"role": "user", "content": [{"type": "text", "text": prompt}]}
-        )
+
         with st.chat_message("user"):
             st.markdown(prompt)
         with st.chat_message("assistant"):
@@ -408,26 +406,6 @@ class BaseAnalystApp:
             st.session_state.suggestions = []
         if 'active_suggestion' not in st.session_state:
             st.session_state.active_suggestion = None
-
-        # Affichage des messages existants
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                if message["role"] == "user":
-                    if isinstance(message["content"], list) and len(message["content"]) > 0:
-                        if isinstance(message["content"][0], dict) and "text" in message["content"][0]:
-                            st.markdown(message["content"][0]["text"])
-                        else:
-                            st.markdown(str(message["content"][0]))
-                    else:
-                        st.markdown(str(message["content"]))
-                else:
-                    for item in message["content"]:
-                        if isinstance(item, dict) and "type" in item and item["type"] == "text":
-                            st.markdown(item["text"])
-                        elif isinstance(item, str):
-                            st.markdown(item)
-                        else:
-                            st.markdown(str(item))
 
         if 'editing_bookmark' not in st.session_state:
             st.session_state.editing_bookmark = None
