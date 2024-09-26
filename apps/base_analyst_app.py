@@ -475,7 +475,6 @@ class BaseAnalystApp:
             if st.session_state.active_suggestion:
                 self.process_message(prompt=st.session_state.active_suggestion)
                 st.session_state.active_suggestion = None
-                st.experimental_rerun()
         else:
             st.error("Aucun modèle sémantique disponible pour cette application.")
 
