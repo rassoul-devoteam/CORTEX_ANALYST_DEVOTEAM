@@ -8,6 +8,7 @@ import io
 import logging
 
 def main():
+
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
 
@@ -95,66 +96,41 @@ def main():
             st.markdown(f"**Statut:** <span style='color:{status_color};'>{'Actif' if app['APP_ACTIVE'] else 'Inactif'}</span>", unsafe_allow_html=True)
             st.write(f"**Rôle d'accès:** {app['APP_ACCESS_ROLE']}")
 
-    # Fonction pour insérer un nouveau modèle dans la table CORTEX_MODELS
-    def insert_new_model(app_id, yaml_file, yaml_name, yaml_active):
+
+    def load_models(app_id):
         session = get_active_session()
-        try:
-            # Convertir app_id en string pour s'assurer qu'il est du bon type
-            app_id_str = str(app_id)
-            yaml_active_bool = yaml_active.lower() == 'true'
-            
-            # Créer un DataFrame avec les nouvelles données
-            new_model_data = session.create_dataframe(
-                [[app_id_str, yaml_file, yaml_name, yaml_active_bool]],
-                schema=["APP_ID", "CORTEX_YAML_FILE", "CORTEX_YAML_NAME", "CORTEX_YAML_ACTIVE"]
-            )
-            
-            # Définir explicitement les types de colonnes
-            new_model_data = new_model_data.with_column("APP_ID", F.col("APP_ID").cast(StringType()))
-            new_model_data = new_model_data.with_column("CORTEX_YAML_ACTIVE", F.col("CORTEX_YAML_ACTIVE").cast(BooleanType()))
-            
-            # Insérer les données dans la table
-            new_model_data.write.mode("append").save_as_table("CORTEX_DB.PUBLIC.CORTEX_MODELS")
-            
-            st.success(f"✔️ Nouveau modèle '{yaml_name}' ajouté avec succès !")
-            logger.info(f"Nouveau modèle ajouté : {yaml_name}")
-        except Exception as e:
-            st.error(f"❌ Erreur lors de l'ajout du modèle : {e}")
-            logger.error(f"Erreur lors de l'ajout du modèle : {e}")
+        return session.table(f"CORTEX_DB.PUBLIC.CORTEX_MODELS").filter(F.col("APP_ID") == str(app_id)).to_pandas()
+
 
     def update_model(app_id, yaml_file, yaml_name, yaml_active):
         session = get_active_session()
         try:
-            # Convertir app_id en string pour s'assurer qu'il est du bon type
-            app_id_str = str(app_id)
             yaml_active_bool = yaml_active.lower() == 'true'
-            
-            # Créer un DataFrame avec les données mises à jour
-            updated_data = session.create_dataframe(
-                [[app_id_str, yaml_file, yaml_name, yaml_active_bool]],
-                schema=["APP_ID", "CORTEX_YAML_FILE", "CORTEX_YAML_NAME", "CORTEX_YAML_ACTIVE"]
-            )
-            
-            # Définir explicitement les types de colonnes
-            updated_data = updated_data.with_column("APP_ID", F.col("APP_ID").cast(StringType()))
-            updated_data = updated_data.with_column("CORTEX_YAML_ACTIVE", F.col("CORTEX_YAML_ACTIVE").cast(BooleanType()))
-            
-            # Mettre à jour la table
-            session.table("CORTEX_DB.PUBLIC.CORTEX_MODELS").merge(
-                updated_data,
-                (F.col("APP_ID") == F.lit(app_id_str)) & (F.col("CORTEX_YAML_NAME") == F.lit(yaml_name)),
-                [F.when_matched().update({
-                    "CORTEX_YAML_FILE": F.col("CORTEX_YAML_FILE"),
-                    "CORTEX_YAML_ACTIVE": F.col("CORTEX_YAML_ACTIVE")
-                })]
-            )
-            
+            session.sql(f"""
+                UPDATE CORTEX_DB.PUBLIC.CORTEX_MODELS 
+                SET CORTEX_YAML_FILE = '{yaml_file}', CORTEX_YAML_ACTIVE = {yaml_active_bool}
+                WHERE APP_ID = '{app_id}' AND CORTEX_YAML_NAME = '{yaml_name}'
+            """).collect()
             st.success(f"✔️ Modèle '{yaml_name}' modifié avec succès !")
-            logger.info(f"Modèle modifié : {yaml_name}")
         except Exception as e:
             st.error(f"❌ Erreur lors de la modification du modèle : {e}")
-            logger.error(f"Erreur lors de la modification du modèle : {e}")
 
+    # Fonction pour insérer un nouveau modèle dans la table CORTEX_MODELS
+    def insert_new_model(app_id, yaml_file, yaml_name, yaml_active):
+        session = get_active_session()
+        try:
+            yaml_active_bool = yaml_active.lower() == 'true'
+            session.sql(f"""
+                INSERT INTO CORTEX_DB.PUBLIC.CORTEX_MODELS 
+                (APP_ID, CORTEX_YAML_FILE, CORTEX_YAML_NAME, CORTEX_YAML_ACTIVE) 
+                VALUES 
+                ('{app_id}', '{yaml_file}', '{yaml_name}', {yaml_active_bool})
+            """).collect()
+            st.success(f"✔️ Nouveau modèle '{yaml_name}' ajouté avec succès !")
+        except Exception as e:
+            st.error(f"❌ Erreur lors de l'ajout du modèle : {e}")
+
+            
     def add_model(app_id):
         st.subheader("Ajouter un nouveau modèle")
         form_key = f"add_model_form_{app_id}"
@@ -193,7 +169,7 @@ def main():
                 yaml_active_str = str(new_yaml_active).lower()
                 update_model(model['APP_ID'], new_yaml_file, model['CORTEX_YAML_NAME'], yaml_active_str)
                 st.experimental_rerun()
-
+                
     # Fonction pour charger les signets d'une application
     def load_bookmarks(app_id):
         session = get_active_session()
@@ -401,27 +377,54 @@ def main():
                 with subtab2:
                     st.subheader(f"Modèles de {app['APP_NAME']}")
                     
+                    # Afficher et gérer les modèles existants
+                    models = load_models(app['APP_ID'])
+                    for _, model in models.iterrows():
+                        with st.expander(f"Modèle: {model['CORTEX_YAML_NAME']}"):
+                            col1, col2, col3 = st.columns([2, 1, 1])
+                            with col1:
+                                st.write(f"Fichier: {model['CORTEX_YAML_FILE']}")
+                            with col2:
+                                status = "Actif" if model['CORTEX_YAML_ACTIVE'] else "Inactif"
+                                st.write(f"Statut: {status}")
+                            with col3:
+                                if st.button("✏️ Modifier", key=f"modify_model_btn_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}"):
+                                    st.session_state[f"modify_model_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}"] = True
+                            
+                            if st.session_state.get(f"modify_model_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}", False):
+                                with st.form(key=f"modify_model_form_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}"):
+                                    new_yaml_file = st.text_input("Fichier YAML", value=model['CORTEX_YAML_FILE'])
+                                    new_yaml_active = st.checkbox("Actif", value=model['CORTEX_YAML_ACTIVE'])
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if st.form_submit_button("Enregistrer"):
+                                            update_model(app['APP_ID'], new_yaml_file, model['CORTEX_YAML_NAME'], str(new_yaml_active))
+                                            st.session_state[f"modify_model_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}"] = False
+                                            st.experimental_rerun()
+                                    with col2:
+                                        if st.form_submit_button("Annuler"):
+                                            st.session_state[f"modify_model_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}"] = False
+                                            st.experimental_rerun()
+                    
                     # Bouton pour ajouter un nouveau modèle
                     if st.button("➕ Ajouter un modèle", key=f"add_model_btn_{app['APP_ID']}"):
-                        add_model(str(app['APP_ID']))  # Convertir APP_ID en string
-                
-                    # Afficher et gérer les modèles existants
-                    models_data = load_table_data("CORTEX_MODELS")
-                    app_models = models_data[models_data['APP_ID'] == str(app['APP_ID'])]  # Comparer avec APP_ID en string
+                        st.session_state[f"add_model_{app['APP_ID']}"] = True
                     
-                    for index, model in app_models.iterrows():
-                        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-                        with col1:
-                            st.write(f"Modèle: {model['CORTEX_YAML_NAME']}")
-                        with col2:
-                            st.write(f"Fichier: {model['CORTEX_YAML_FILE']}")
-                        with col3:
-                            status = "Actif" if model['CORTEX_YAML_ACTIVE'] else "Inactif"
-                            st.write(f"Statut: {status}")
-                        with col4:
-                            button_key = f"modify_model_btn_{app['APP_ID']}_{model['CORTEX_YAML_NAME']}"
-                            if st.button("✏️ Modifier", key=button_key):
-                                modify_model(model)
+                    if st.session_state.get(f"add_model_{app['APP_ID']}", False):
+                        with st.form(key=f"add_model_form_{app['APP_ID']}"):
+                            new_yaml_name = st.text_input("Nom du modèle")
+                            new_yaml_file = st.text_input("Fichier YAML")
+                            new_yaml_active = st.checkbox("Actif", value=True)
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.form_submit_button("Ajouter"):
+                                    insert_new_model(app['APP_ID'], new_yaml_file, new_yaml_name, str(new_yaml_active))
+                                    st.session_state[f"add_model_{app['APP_ID']}"] = False
+                                    st.experimental_rerun()
+                            with col2:
+                                if st.form_submit_button("Annuler"):
+                                    st.session_state[f"add_model_{app['APP_ID']}"] = False
+                                    st.experimental_rerun()
 
                 # Sous-onglet 3 : Gestion des signets
                 with subtab3:
@@ -481,7 +484,6 @@ def main():
                             st.write(f"   - Temps moyen d'exécution : {row['AVG_ELAPSED_TIME']:.2f} secondes")
                             st.write(f"   - Temps moyen de résolution : {row['AVG_RESOLUTION_TIME']:.2f} secondes")
                         st.write("---")
-
 # Condition pour exécuter main() si le script est exécuté directement
 if __name__ == "__main__":
     main()
